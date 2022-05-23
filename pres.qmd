@@ -1,0 +1,213 @@
+---
+title: "The R-spatial package ecosystem and openEO for analysing Earth Observation data"
+author: "E. Pebesma, M. Mohr, F. Lahn, P. Zellner, M. Rossi, A. Jacob, P. Griffiths"
+format: 
+  beamer:
+    incremental: false
+classoption: "aspectratio=169"
+---
+
+```{r, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, echo = TRUE)
+```
+
+## Why do we use Data Science languages, and Open Source?
+
+The aim of science is communication:
+
+- DS languages summarise and abstract problems
+- open source lets anyone scrutinize computation, it allows to 
+    - learn, 
+    - understand, 
+    - critisize and 
+    - extend
+
+## What is R, and R-Spatial?
+
+Why do people use R?
+
+- .. it is a free software environment for statistical computing and graphics
+- it is extendiblek
+- it runs on Win/OSX/Linux, and has no package install hell
+- it has strong support for spatial data, and spatial statistics
+
+Why do people use R-Spatial?
+
+- it solves problems, they know how
+- many problems need _statistical_ analysis, e.g. for model inference or assessing prediction errors
+- complex graphs are easy to make
+- strong, friendly commmunity support
+
+## Data cubes, image collections
+
+What we have:
+
+![](L7-sparsetime.png)
+
+\scriptsize Appel, M., Lahn, F., Buytaert, W. & Pebesma, E. (2018). Open and scalable analytics of large Earth observation datasets: from scenes to multidimensional arrays using SciDB and GDAL. ISPRS Journal of Photogrammetry and Remote Sensing, 138, 47-56. 
+
+------
+
+What we want:
+
+![](cube2.png)
+
+------
+
+Or interactively:
+
+![https://twitter.com/miguelmahechag1/status/1528653878798991360](esdc.png)
+
+------
+
+## How to cube?
+
+EO data is observational, orbit-based, does not come as such a
+data cube in contrast to e.g. ERA5 (weather) which is _created_
+as data cube (predictions, not observations)
+
+Need to choose:
+
+* lower resolution spatially: not everything needs to be done at observation resolution
+* constant resolution temporally, temporal aggregation method (mean? max?)
+* target CRS, in case e.g. multiple UTM zones are covered
+
+It seems unlikely that major EO datasets are distributed as cubes, because
+
+* there is no one-fits all (temporal resolution?),
+* the "best" cube seems application dependent
+
+## Creating cubes from image collections
+
+* on-the-fly, GEE, openEO: data cube _views_
+* explicitly: R package `gdalcubes` (Marius Appel), by specifying spatial
+and temporal aggregation _methods_
+
+## package `gdalcubes`
+
+```{r eval=TRUE}
+library(gdalcubes)
+L8.files = list.files("/home/edzer/data/L8_cropped", pattern = ".tif",
+				recursive = TRUE, full.names = TRUE)
+L8.col = create_image_collection(L8.files, format = "L8_SR", 
+				out_file = "L8.db")
+sapply(extent(L8.col, srs="EPSG:4326"), format)
+v.overview.500m = cube_view(srs="EPSG:3857", extent=L8.col,
+		dx = 500, dy = 500, dt = "P1Y", resampling = "nearest", 
+		aggregation = "median")
+```
+
+------
+
+```{r eval=TRUE}
+v.overview.500m
+L8.cube.overview = raster_cube(L8.col, v.overview.500m)
+L8.cube.overview.rgb = select_bands(L8.cube.overview, c("B02", "B03", "B04"))
+## This would do the real work:
+# write_ncdf(L8.cube.overview.rgb, "L8.nc")
+```
+
+## package `stars`
+
+```{r}
+library(stars)
+file_name = system.file("tif/L7_ETMs.tif", package = "stars")
+(r = read_stars(file_name))
+```
+
+-----
+
+```{r fig.width=8, fig.height=4}
+plot(r, key.pos = 4)
+```
+
+-----
+
+```{r}
+read_stars(file_name, proxy = TRUE)
+```
+
+- lazy: delays reading pixels and subsequent computations until needed (plot, download)
+
+## openEO: R client
+
+```{r eval=FALSE}
+library(openeo)
+con = openeo::connect("https://openeo.cloud")
+login()
+# list_collections()
+collection = "SENTINEL2_L2A"
+coll_meta = describe_collection(collection)
+library(sf)
+bbox = list(west = 7, east = 7.01, south = 52, north = 52.01)
+bands = c("B04", "B08")
+time_range = list("2018-01-01", "2019-01-01")
+p = openeo::processes()
+data = p$load_collection(id = collection, spatial_extent = bbox,
+          temporal_extent = time_range, bands = bands) 
+```
+
+-----
+
+
+```{r eval=FALSE}
+ndvi = function(data, context) { 
+  red = data[1]; nir = data[2]; (nir-red)/(nir+red) 
+}
+calc_ndvi = p$reduce_dimension(data = data, dimension = "bands",
+    reducer = ndvi)
+intervals = ...
+labels = ...
+temp_period = p$aggregate_temporal(data = calc_ndvi,
+    reducer = function(data, context){p$median(data)},
+    intervals = intervals, labels = labels, dimension = "t")
+result = p$save_result(data = temp_period, format="NetCDF")
+# asynchronous:
+job = create_job(graph = result,
+    title = "ndvi.nc", description = "ndvi.nc",
+    format = "netCDF")
+start_job(job = job$id) # use the id of the job (job$id) to start the job
+status(job)
+dwnld = download_results(job = job$id, folder = "./") # when finished
+```
+
+--------
+
+```{r fig.height=4}
+r = read_stars("openEO.nc")
+plot(r)
+```
+
+## UDF: user-defined functions
+
+local exploration, remote execution
+
+1. obtain a small cube section, using `openeo::get_sample()`, as `stars` object
+2. explore locally, developing an analysis function 
+3. push this function as UDF to the openEO backend
+4. show, explore, or download the results
+
+- At the back-end, the "full" data cube is chunked, and pulled through
+the UDF, again as `stars` sub-cubes.
+- Currently works with `reduce_dimension` and `apply_dimension`, so
+that the backend can choose the appropriate chunking strategy
+
+## Vision
+
+minimize modification of the script:
+
+* extend `stars_proxy` objects to "cubed" remote image collections
+* running locally or in cloud, with minimal adaptation
+* use UDF: test locally, deploy remotely
+
+## Other packages:
+
+* `raster`, now `terra`: stop at 3 dimensions, directly read GDAL datasets, no vector data cubes
+* `sits`: aims at training and prediction ML models from training time series 
+
+## Discussion
+
+* no need for language wars, a good language cross fertilization takes place
+* R-spatial welcomes new contributions, and young developers taking responsibility
+* use or search for `#rspatial` on Twitter
+
