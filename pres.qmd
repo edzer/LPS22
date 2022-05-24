@@ -15,19 +15,22 @@ knitr::opts_chunk$set(collapse = TRUE, echo = TRUE)
 
 The aim of science is communication:
 
-- DS languages summarise and abstract problems
+- DS languages summarise and abstract problems, and allow reproducing the computational steps of a study
 - open source lets anyone scrutinize computation, it allows to 
     - learn, 
     - understand, 
     - critisize and 
     - extend
 
+\scriptsize 
+`https://github.com/edzer/LPS22`
+
 ## What is R, and R-Spatial?
 
 Why do people use R?
 
 - .. it is a free software environment for statistical computing and graphics
-- it is extendiblek
+- it is extendible
 - it runs on Win/OSX/Linux, and has no package install hell
 - it has strong support for spatial data, and spatial statistics
 
@@ -36,7 +39,7 @@ Why do people use R-Spatial?
 - it solves problems, they know how
 - many problems need _statistical_ analysis, e.g. for model inference or assessing prediction errors
 - complex graphs are easy to make
-- strong, friendly commmunity support
+- friendly and diverse commmunity support
 
 ## Data cubes, image collections
 
@@ -44,7 +47,8 @@ What we have:
 
 ![](L7-sparsetime.png)
 
-\scriptsize Appel, M., Lahn, F., Buytaert, W. & Pebesma, E. (2018). Open and scalable analytics of large Earth observation datasets: from scenes to multidimensional arrays using SciDB and GDAL. ISPRS Journal of Photogrammetry and Remote Sensing, 138, 47-56. 
+\scriptsize 
+Appel, M., Lahn, F., Buytaert, W. & Pebesma, E. (2018). Open and scalable analytics of large Earth observation datasets: from scenes to multidimensional arrays using SciDB and GDAL. ISPRS Journal of Photogrammetry and Remote Sensing, 138, 47-56. 
 
 ------
 
@@ -62,15 +66,11 @@ Or interactively:
 
 ## How to cube?
 
-EO data is observational, orbit-based, does not come as such a
-data cube in contrast to e.g. ERA5 (weather) which is _created_
-as data cube (predictions, not observations)
-
 Need to choose:
 
-* lower resolution spatially: not everything needs to be done at observation resolution
-* constant resolution temporally, temporal aggregation method (mean? max?)
+* spatial resolution: not everything needs to be done always at observation resolution
 * target CRS, in case e.g. multiple UTM zones are covered
+* spatial and/or temporal aggregation/interpolation _methods_
 
 It seems unlikely that major EO datasets are distributed as cubes, because
 
@@ -80,8 +80,7 @@ It seems unlikely that major EO datasets are distributed as cubes, because
 ## Creating cubes from image collections
 
 * on-the-fly, GEE, openEO: data cube _views_
-* explicitly: R package `gdalcubes` (Marius Appel), by specifying spatial
-and temporal aggregation _methods_
+* explicitly: e.g. using R package `gdalcubes`
 
 ## package `gdalcubes`
 
@@ -91,8 +90,7 @@ L8.files = list.files("/home/edzer/data/L8_cropped", pattern = ".tif",
 				recursive = TRUE, full.names = TRUE)
 L8.col = create_image_collection(L8.files, format = "L8_SR", 
 				out_file = "L8.db")
-sapply(extent(L8.col, srs="EPSG:4326"), format)
-v.overview.500m = cube_view(srs="EPSG:3857", extent=L8.col,
+v.overview = cube_view(srs="EPSG:3857", extent=L8.col,
 		dx = 500, dy = 500, dt = "P1Y", resampling = "nearest", 
 		aggregation = "median")
 ```
@@ -100,12 +98,13 @@ v.overview.500m = cube_view(srs="EPSG:3857", extent=L8.col,
 ------
 
 ```{r eval=TRUE}
-v.overview.500m
-L8.cube.overview = raster_cube(L8.col, v.overview.500m)
+v.overview
+L8.cube.overview = raster_cube(L8.col, v.overview)
 L8.cube.overview.rgb = select_bands(L8.cube.overview, c("B02", "B03", "B04"))
 ## This would do the real work:
 # write_ncdf(L8.cube.overview.rgb, "L8.nc")
 ```
+Also understands STAC collections, using R package `rstac`
 
 ## package `stars`
 
@@ -124,31 +123,50 @@ plot(r, key.pos = 4)
 -----
 
 ```{r}
-read_stars(file_name, proxy = TRUE)
+read_stars(file_name, proxy = TRUE) |> 
+   st_set_dimensions("band", c("B1", "B2", "B3", "B4", "B5", "B6")) -> r
+r
 ```
 
 - lazy: delays reading pixels and subsequent computations until needed (plot, download)
 
+## Vector data cubes
+
+```{r}
+r |> st_bbox() |> st_as_sfc() |> st_sample(10) -> pts
+(e <- st_extract(r, pts))
+```
+
+--------------
+
+```{r}
+as.data.frame(e) |> dim()
+as.data.frame(e) |> head(3)               # "long"
+st_as_sf(e) |> as.data.frame() |> dim()
+st_as_sf(e) |> as.data.frame() |> head(3) # "wide"
+```
+
 ## openEO: R client
+
+Connect, load collection:
 
 ```{r eval=FALSE}
 library(openeo)
-con = openeo::connect("https://openeo.cloud")
+con = connect("https://openeo.cloud")
 login()
 # list_collections()
 collection = "SENTINEL2_L2A"
-coll_meta = describe_collection(collection)
-library(sf)
 bbox = list(west = 7, east = 7.01, south = 52, north = 52.01)
 bands = c("B04", "B08")
 time_range = list("2018-01-01", "2019-01-01")
-p = openeo::processes()
+p = processes()
 data = p$load_collection(id = collection, spatial_extent = bbox,
           temporal_extent = time_range, bands = bands) 
 ```
 
 -----
 
+Process (asynchronous):
 
 ```{r eval=FALSE}
 ndvi = function(data, context) { 
@@ -156,13 +174,11 @@ ndvi = function(data, context) {
 }
 calc_ndvi = p$reduce_dimension(data = data, dimension = "bands",
     reducer = ndvi)
-intervals = ...
-labels = ...
+intervals = ... ; labels = ...
 temp_period = p$aggregate_temporal(data = calc_ndvi,
-    reducer = function(data, context){p$median(data)},
+    reducer = function(data, context) p$median(data),
     intervals = intervals, labels = labels, dimension = "t")
 result = p$save_result(data = temp_period, format="NetCDF")
-# asynchronous:
 job = create_job(graph = result,
     title = "ndvi.nc", description = "ndvi.nc",
     format = "netCDF")
@@ -200,14 +216,26 @@ minimize modification of the script:
 * running locally or in cloud, with minimal adaptation
 * use UDF: test locally, deploy remotely
 
-## Other packages:
+I would like sth like this to work:
+
+```{r eval = FALSE}
+# after connect()/login():
+get_collection("SENTINEL2_L2A") |>
+	filter(bbox, time_range, bands) |>
+    st_apply(~band, ndvi) |>
+    aggregate("months", median) |>
+	mapview()
+```
+
+## Further packages:
 
 * `raster`, now `terra`: stop at 3 dimensions, directly read GDAL datasets, no vector data cubes
 * `sits`: aims at training and prediction ML models from training time series 
 
 ## Discussion
 
-* no need for language wars, a good language cross fertilization takes place
-* R-spatial welcomes new contributions, and young developers taking responsibility
+* vector data cubes arise naturally from raster data cubes (by sampling, aggregating over polygons)
+* a good language cross fertilization between Data Science languages takes place
+* R-spatial welcomes new contributions, and young developers willing to take responsibility
 * use or search for `#rspatial` on Twitter
-
+* Get involved, get in touch!
