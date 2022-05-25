@@ -41,6 +41,10 @@ Why do people use R-Spatial?
 - complex graphs are easy to make
 - friendly and diverse commmunity support
 
+---------
+
+![](sf_deps.png)
+
 ## Data cubes, image collections
 
 What we have:
@@ -58,7 +62,7 @@ What we want:
 
 ------
 
-Or interactively:
+Or even:
 
 ![https://twitter.com/miguelmahechag1/status/1528653878798991360](esdc.png)
 
@@ -72,9 +76,9 @@ Need to choose:
 * target CRS, in case e.g. multiple UTM zones are covered
 * spatial and/or temporal aggregation/interpolation _methods_
 
-It seems unlikely that major EO datasets are distributed as cubes, because
+It seems unlikely that major EO datasets are _distributed_ as cubes, because
 
-* there is no one-fits all (temporal resolution?),
+* there is no one-fits-all
 * the "best" cube seems application dependent
 
 ## Creating cubes from image collections
@@ -100,11 +104,11 @@ v.overview = cube_view(srs="EPSG:3857", extent=L8.col,
 ```{r eval=TRUE}
 v.overview
 L8.cube.overview = raster_cube(L8.col, v.overview)
-L8.cube.overview.rgb = select_bands(L8.cube.overview, c("B02", "B03", "B04"))
-## This would do the real work:
+L8.cube.overview.rgb = select_bands(L8.cube.overview, 
+    c("B02", "B03", "B04"))
 # write_ncdf(L8.cube.overview.rgb, "L8.nc")
 ```
-Also understands STAC collections, using R package `rstac`
+`gdalcubes` understands STAC collections, using R package `rstac`
 
 ## package `stars`
 
@@ -206,7 +210,7 @@ local exploration, remote execution
 - At the back-end, the "full" data cube is chunked, and pulled through
 the UDF, again as `stars` sub-cubes.
 - Currently works with `reduce_dimension` and `apply_dimension`, so
-that the backend can choose the appropriate chunking strategy
+that the backend _knows_ which chunking strategy to use
 
 ## Vision
 
@@ -229,13 +233,13 @@ get_collection("SENTINEL2_L2A") |>
 
 ## Further packages:
 
-* `raster`, now `terra`: stop at 3 dimensions, directly read GDAL datasets, no vector data cubes
-* `sits`: aims at training and prediction ML models from training time series 
+* `raster`, now `terra`: stop at 3 dimensions, directly read GDAL datasets, no vector data cubes; focus on scalable and high performance
+* `sits`: trains ML models and predicts using EO _time series_ ; used operationally by INPE for mapping land use change in Brazil; see https://e-sensing.github.io/sitsbook/
 
 ## Discussion
 
 * vector data cubes arise naturally from raster data cubes (by sampling, aggregating over polygons)
-* a good language cross fertilization between Data Science languages takes place
-* R-spatial welcomes new contributions, and young developers willing to take responsibility
+* Data Science is multi-lingual; language cross fertilization is useful
+* R-spatial welcomes new contributions, and developers willing to take responsibility
 * use or search for `#rspatial` on Twitter
 * Get involved, get in touch!
