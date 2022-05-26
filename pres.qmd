@@ -118,10 +118,15 @@ file_name = system.file("tif/L7_ETMs.tif", package = "stars")
 (r = read_stars(file_name))
 ```
 
+```{r echo=FALSE}
+read_stars(file_name, proxy = TRUE) |> 
+   st_set_dimensions("band", c("B1", "B2", "B3", "B4", "B5", "B6")) -> r
+```
+
 -----
 
 ```{r fig.width=8, fig.height=4}
-plot(r, key.pos = 4)
+plot(r)
 ```
 
 -----
@@ -204,7 +209,7 @@ local exploration, remote execution
 
 1. obtain a small cube section, using `openeo::get_sample()`, as `stars` object
 2. explore locally, developing an analysis function 
-3. push this function as UDF to the openEO backend
+3. push _exactly_ the same function as UDF to the openEO backend
 4. show, explore, or download the results
 
 - At the back-end, the "full" data cube is chunked, and pulled through
@@ -214,13 +219,13 @@ that the backend _knows_ which chunking strategy to use
 
 ## Vision
 
-minimize modification of the script:
+1. Minimize modification of the script
 
 * extend `stars_proxy` objects to "cubed" remote image collections
 * running locally or in cloud, with minimal adaptation
 * use UDF: test locally, deploy remotely
 
-I would like sth like this to work:
+2. Add syntactic sugar 
 
 ```{r eval = FALSE}
 # after connect()/login():
@@ -243,3 +248,4 @@ get_collection("SENTINEL2_L2A") |>
 * R-spatial welcomes new contributions, and developers willing to take responsibility
 * use or search for `#rspatial` on Twitter
 * Get involved, get in touch!
+
